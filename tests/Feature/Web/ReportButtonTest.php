@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\ReactionService;
 use Database\Seeders\ReactionTypeSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 
 use function Pest\Laravel\assertDatabaseHas;
@@ -155,7 +156,7 @@ it('rejects client writes to server-owned reaction state', function (string $pro
 
     expect(fn () => Livewire::test('reactions', ['type' => 'post', 'id' => (int) $post->id])
         ->set($property, $value))
-        ->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+        ->toThrow(CannotUpdateLockedPropertyException::class);
 })->with([
     'nested reactions count' => ['reactions.like', ['x']],
     'whole reactions map' => ['reactions', ['like' => ['x']]],
