@@ -14,6 +14,7 @@ use Filament\Panel;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -162,6 +163,11 @@ class User extends Authenticatable implements FilamentUser, HasName, MustVerifyE
     public function posts(): HasMany
     {
         return $this->hasMany(Post::class);
+    }
+
+    public function postDraft(): HasOne
+    {
+        return $this->hasOne(PostDraft::class);
     }
 
     public function comments(): HasMany

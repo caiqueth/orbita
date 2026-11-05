@@ -35,6 +35,8 @@ return [
         'max_title' => 250,
         'max_content' => 50000,
         'max_url_length' => 2048,
+        'draft_sync_seconds' => 15,
+        'draft_ttl_days' => 30,
     ],
 
     'comments' => [

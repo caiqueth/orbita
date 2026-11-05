@@ -31,3 +31,7 @@ Schedule::command('orbita:notifications-clean')
 Schedule::command('orbita:sitemap-generate')
     ->daily()
     ->withoutOverlapping(30);
+
+Schedule::command('orbita:post-drafts-prune')
+    ->daily()
+    ->withoutOverlapping(30);

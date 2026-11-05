@@ -1100,3 +1100,196 @@ document.addEventListener('click', (event) => {
 document.addEventListener('livewire:navigating', () => {
     lightbox.pswp?.close();
 });
+
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('postAutosave', (config = {}) => ({
+        storageKey: config.storageKey,
+        savedAt: null,
+        syncMs: Math.max(5, config.syncSeconds ?? 15) * 1000,
+        dirty: false,
+        syncing: false,
+        failed: false,
+        hasLocal: false,
+        restoredLocal: false,
+        localOk: true,
+        submitting: false,
+        confirmingDiscard: false,
+        writeTimer: null,
+        syncTimer: null,
+        confirmTimer: null,
+
+        init() {
+            this.savedAt = this.$wire.draftSavedAt ?? null;
+            this.restoreLocal();
+
+            this.syncTimer = setInterval(() => this.sync(), this.syncMs);
+            this.onVisibility = () => {
+                if (document.visibilityState === 'hidden') {
+                    this.writeLocal();
+                    this.sync();
+                }
+            };
+            this.onBeforeUnload = (event) => {
+                if (this.dirty && !this.localOk && !this.submitting) {
+                    event.preventDefault();
+                    event.returnValue = '';
+                }
+            };
+            document.addEventListener('visibilitychange', this.onVisibility);
+            window.addEventListener('beforeunload', this.onBeforeUnload);
+            this.$el.querySelector('form')?.addEventListener('submit', () => {
+                this.submitting = true;
+            });
+        },
+
+        destroy() {
+            clearInterval(this.syncTimer);
+            clearTimeout(this.writeTimer);
+            clearTimeout(this.confirmTimer);
+            document.removeEventListener('visibilitychange', this.onVisibility);
+            window.removeEventListener('beforeunload', this.onBeforeUnload);
+        },
+
+        get hasDraft() {
+            return Boolean(this.savedAt || this.hasLocal || this.dirty);
+        },
+
+        get statusText() {
+            if (this.syncing) {
+                return 'Salvando rascunho…';
+            }
+            if (this.failed && this.hasLocal) {
+                return 'Rascunho salvo neste navegador (sem conexão com o servidor)';
+            }
+            if (this.restoredLocal) {
+                return 'Rascunho restaurado deste navegador';
+            }
+            if (this.savedAt) {
+                const locale = document.documentElement.lang || undefined;
+                const time = new Date(this.savedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+                return 'Rascunho salvo às ' + time;
+            }
+            return '';
+        },
+
+        values() {
+            return {
+                title: this.$wire.title ?? '',
+                url: this.$wire.url ?? '',
+                content: this.$wire.content ?? '',
+            };
+        },
+
+        readLocal() {
+            try {
+                const raw = window.localStorage.getItem(this.storageKey);
+                return raw ? JSON.parse(raw) : null;
+            } catch {
+                return null;
+            }
+        },
+
+        restoreLocal() {
+            const local = this.readLocal();
+            if (!local || typeof local !== 'object') {
+                return;
+            }
+
+            const current = this.values();
+            const same = ['title', 'url', 'content'].every((k) => (local[k] ?? '') === current[k]);
+            const localIsNewer = !this.savedAt || Date.parse(local.updatedAt ?? 0) > Date.parse(this.savedAt);
+
+            if (same || !localIsNewer) {
+                this.hasLocal = true;
+                return;
+            }
+
+            this.$wire.set('title', local.title ?? '', false);
+            this.$wire.set('content', local.content ?? '', false);
+            // url is a live model: setting it also refreshes the oEmbed preview.
+            this.$wire.set('url', local.url ?? '');
+            this.hasLocal = true;
+            this.restoredLocal = true;
+            this.dirty = true;
+        },
+
+        markDirty() {
+            this.dirty = true;
+            this.submitting = false;
+            this.confirmingDiscard = false;
+            clearTimeout(this.writeTimer);
+            this.writeTimer = setTimeout(() => this.writeLocal(), 500);
+        },
+
+        writeLocal() {
+            clearTimeout(this.writeTimer);
+            if (!this.dirty) {
+                return;
+            }
+            const data = this.values();
+            try {
+                if (!data.title.trim() && !data.url.trim() && !data.content.trim()) {
+                    window.localStorage.removeItem(this.storageKey);
+                    this.hasLocal = false;
+                } else {
+                    window.localStorage.setItem(this.storageKey, JSON.stringify({ ...data, updatedAt: new Date().toISOString() }));
+                    this.hasLocal = true;
+                }
+                this.localOk = true;
+            } catch {
+                this.localOk = false;
+            }
+        },
+
+        sync() {
+            if (!this.dirty || this.syncing || this.submitting) {
+                return;
+            }
+            this.writeLocal();
+            this.syncing = true;
+            this.dirty = false;
+
+            // A request that dies offline may never settle; don't let it pin "Salvando…".
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000));
+
+            Promise.race([this.$wire.saveDraft(), timeout])
+                .then((savedAt) => {
+                    this.savedAt = savedAt || null;
+                    this.failed = false;
+                    this.restoredLocal = false;
+                })
+                .catch(() => {
+                    this.dirty = true;
+                    this.failed = true;
+                })
+                .finally(() => {
+                    this.syncing = false;
+                });
+        },
+
+        discard() {
+            if (!this.confirmingDiscard) {
+                this.confirmingDiscard = true;
+                clearTimeout(this.confirmTimer);
+                this.confirmTimer = setTimeout(() => (this.confirmingDiscard = false), 4000);
+                return;
+            }
+            this.confirmingDiscard = false;
+            this.$wire.discardDraft();
+        },
+
+        clearLocal() {
+            clearTimeout(this.writeTimer);
+            try {
+                window.localStorage.removeItem(this.storageKey);
+            } catch {
+                // storage unavailable: nothing to clear
+            }
+            this.dirty = false;
+            this.failed = false;
+            this.hasLocal = false;
+            this.restoredLocal = false;
+            this.savedAt = null;
+        },
+    }));
+});

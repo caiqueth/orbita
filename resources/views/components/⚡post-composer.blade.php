@@ -1,10 +1,13 @@
 <?php
 
 use App\Livewire\Attributes\RequiresActivatedAccount;
+use App\Models\Media;
 use App\Models\Post;
+use App\Models\PostDraft;
 use App\Services\OembedService;
 use App\Services\PostService;
 use App\Support\Slug;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -40,8 +43,16 @@ new class extends Component
     /** Inline-editor upload: the file currently being processed (Livewire temp). */
     public $pendingImage = null;
 
-    /** media_ids inserted inline into a NEW post, attached to the pivot on save. */
+    /**
+     * media_ids inserted inline into a NEW post, attached to the pivot on save.
+     * Locked: only the server appends to it, so a client cannot claim someone else's media.
+     */
+    #[Locked]
     public array $pendingMediaIds = [];
+
+    /** ISO timestamp of the last server-side draft save (new posts only). */
+    #[Locked]
+    public ?string $draftSavedAt = null;
 
     public ?string $oembedHtml = null;
 
@@ -65,7 +76,118 @@ new class extends Component
             $this->content = (string) $post->content;
             $this->isEdit = true;
             $this->refreshOembed();
+
+            return;
         }
+
+        $this->restoreDraft();
+    }
+
+    private function restoreDraft(): void
+    {
+        $draft = PostDraft::query()->where('user_id', (int) auth()->id())->first();
+        if ($draft === null) {
+            return;
+        }
+
+        $this->title = (string) ($draft->title ?? '');
+        $this->url = (string) ($draft->url ?? '');
+        $this->content = (string) ($draft->content ?? '');
+        $this->pendingMediaIds = $this->ownedMediaIds((array) ($draft->media_ids ?? []));
+        $this->draftSavedAt = $draft->updated_at?->toIso8601String();
+        $this->refreshOembed();
+    }
+
+    /**
+     * Keeps only media this user uploaded that still exist and are not attached to a post.
+     *
+     * @param  array<int, mixed>  $ids
+     * @return array<int, int>
+     */
+    private function ownedMediaIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if ($ids === []) {
+            return [];
+        }
+
+        $valid = Media::query()
+            ->whereIn('id', $ids)
+            ->where('uploaded_by', (int) auth()->id())
+            ->whereNotExists(fn ($q) => $q->selectRaw('1')
+                ->from('media_relationship')
+                ->whereColumn('media_relationship.media_id', 'media.id'))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return array_values(array_filter($ids, fn (int $id) => in_array($id, $valid, true)));
+    }
+
+    /**
+     * Auto-save of a NEW post being written. Called periodically by the client
+     * (title/content travel with the request, since they are deferred wire:models).
+     * Returns the ISO save time, or null when nothing was saved.
+     */
+    #[RequiresActivatedAccount(silent: true)]
+    public function saveDraft(): ?string
+    {
+        if ($this->isEdit) {
+            return null;
+        }
+
+        $userId = (int) auth()->id();
+        $key = 'post-draft:'.$userId;
+        if (RateLimiter::tooManyAttempts($key, 30)) {
+            return null;
+        }
+        RateLimiter::hit($key, 60);
+
+        $title = mb_substr($this->title, 0, (int) config('orbita.posts.max_title', 250));
+        $url = mb_substr(trim($this->url), 0, (int) config('orbita.posts.max_url_length', 2048));
+        $content = mb_substr($this->content, 0, (int) config('orbita.posts.max_content', 50000));
+
+        if (trim($title) === '' && $url === '' && trim($content) === '' && $this->pendingMediaIds === []) {
+            PostDraft::query()->where('user_id', $userId)->delete();
+            $this->draftSavedAt = null;
+
+            return null;
+        }
+
+        $draft = PostDraft::query()->updateOrCreate(['user_id' => $userId], [
+            'title' => $title,
+            'url' => $url !== '' ? $url : null,
+            'content' => $content,
+            'media_ids' => array_values($this->pendingMediaIds),
+        ]);
+        $draft->touch();
+
+        return $this->draftSavedAt = $draft->updated_at->toIso8601String();
+    }
+
+    /** Throws away the auto-saved draft and the images uploaded only for it. */
+    public function discardDraft(): void
+    {
+        if ($this->isEdit) {
+            return;
+        }
+
+        $userId = (int) auth()->id();
+        PostDraft::query()->where('user_id', $userId)->delete();
+
+        $orphans = Media::query()->whereIn('id', $this->ownedMediaIds($this->pendingMediaIds))->get();
+        foreach ($orphans as $media) {
+            try {
+                app(\App\Services\ImageService::class)->deleteImage((string) $media->path, (int) $media->id, $userId);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        $this->reset('title', 'url', 'content', 'pendingMediaIds', 'draftSavedAt', 'oembedHtml', 'oembedType', 'oembedFetchedUrl');
+        $this->resetErrorBag();
+        $this->dispatch('editor-reset')->el('.markdown-editor');
+        $this->dispatch('draft-discarded');
     }
 
     public function updatedUrl(): void
@@ -117,6 +239,7 @@ new class extends Component
                 }
             } else {
                 $this->pendingMediaIds[] = $mediaId;
+                $this->saveDraft();
             }
 
             $media = \App\Models\Media::query()->find($mediaId);
@@ -248,6 +371,11 @@ new class extends Component
                 }
                 $post->media()->syncWithoutDetaching($attach);
             }
+
+            if (! $this->isEdit) {
+                PostDraft::query()->where('user_id', $userId)->delete();
+                $this->dispatch('post-created');
+            }
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             //
             throw $e;
@@ -262,7 +390,15 @@ new class extends Component
     }
 }; ?>
 
-<div>
+<div @if (! $isEdit)
+         x-data="postAutosave(@js([
+             'storageKey' => 'orbita:post-draft:'.auth()->id(),
+             'syncSeconds' => (int) config('orbita.posts.draft_sync_seconds', 15),
+         ]))"
+         x-on:input="markDirty()"
+         x-on:post-created.window="clearLocal()"
+         x-on:draft-discarded.window="clearLocal()"
+     @endif>
     <form wire:submit="save" class="space-y-5">
         <div>
             <label for="pc-title" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -312,7 +448,15 @@ new class extends Component
             @error('content') <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
         </div>
 
-        <div class="flex items-center justify-end gap-2">
+        <div class="flex flex-wrap items-center justify-end gap-2">
+            @unless ($isEdit)
+                <p class="mr-auto text-sm text-gray-500 dark:text-gray-400" role="status" aria-live="polite" x-text="statusText" x-cloak></p>
+                <template x-if="hasDraft">
+                    <button type="button" @click="discard()"
+                            class="rounded-md px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                            x-text="confirmingDiscard ? 'Clique de novo para descartar' : 'Descartar rascunho'"></button>
+                </template>
+            @endunless
             @if ($isEdit && $postHashid)
                 <a href="{{ route('posts.show', ['hashid' => $postHashid, 'slug' => $postSlug]) }}" wire:navigate
                    class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">Cancelar</a>
