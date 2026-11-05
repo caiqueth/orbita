@@ -13,6 +13,7 @@ use ReflectionProperty;
 use Symfony\Component\Mailer\Transport\FailoverTransport;
 use Symfony\Component\Mailer\Transport\RoundRobinTransport;
 use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
+use Symfony\Component\Mailer\Transport\Smtp\SmtpTransport;
 
 afterEach(function () {
     Mail::forgetMailers();
@@ -52,4 +53,15 @@ it('the retry period is configured where laravel actually reads it', function ()
         ->getValue(Mail::mailer('roundrobin')->getSymfonyTransport());
 
     expect($retryPeriod)->toBe(15);
+});
+
+it('smtp transports ping idle connections before the server times them out', function () {
+    $pingThreshold = new ReflectionProperty(SmtpTransport::class, 'pingThreshold');
+
+    foreach (['oci', 'resend', 'smtp'] as $mailer) {
+        $transport = Mail::mailer($mailer)->getSymfonyTransport();
+
+        expect($transport)->toBeInstanceOf(EsmtpTransport::class)
+            ->and($pingThreshold->getValue($transport))->toBe(10);
+    }
 });

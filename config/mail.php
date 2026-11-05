@@ -22,6 +22,7 @@ return [
             'username' => env('MAIL_OCI_USERNAME'),
             'password' => env('MAIL_OCI_PASSWORD'),
             'timeout' => env('MAIL_SMTP_TIMEOUT', 30),
+            'ping_threshold' => env('MAIL_SMTP_PING_THRESHOLD', 10),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
@@ -33,6 +34,7 @@ return [
             'username' => env('MAIL_RESEND_USERNAME', 'resend'),
             'password' => env('MAIL_RESEND_PASSWORD'),
             'timeout' => env('MAIL_SMTP_TIMEOUT', 30),
+            'ping_threshold' => env('MAIL_SMTP_PING_THRESHOLD', 10),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
@@ -46,6 +48,7 @@ return [
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
+            'ping_threshold' => env('MAIL_SMTP_PING_THRESHOLD', 10),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
