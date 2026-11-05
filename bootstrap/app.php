@@ -12,8 +12,10 @@ use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Routing\Exceptions\InvalidSignatureException;
 use Illuminate\Support\Facades\Log;
 use Livewire\Exceptions\ComponentNotFoundException;
+use Livewire\Features\SupportFileUploads\MissingFileUploadsTraitException;
 use Livewire\Mechanisms\HandleRequests\EndpointResolver;
 use Sentry\Laravel\Integration;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /*
@@ -42,6 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ), true)
             ? new NotFoundHttpException($e->getMessage(), $e)
             : $e);
+
+        $exceptions->map(fn (MissingFileUploadsTraitException $e): Throwable => new BadRequestHttpException($e->getMessage(), $e));
 
         $exceptions->dontRetryWhen(fn (Throwable $e): bool => PermanentMailFailure::isPermanent($e));
         $exceptions->dontReportWhen(fn (Throwable $e): bool => PermanentMailFailure::isPermanent($e));
