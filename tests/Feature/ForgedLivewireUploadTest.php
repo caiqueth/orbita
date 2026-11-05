@@ -10,6 +10,8 @@ use Livewire\Mechanisms\HandleRequests\EndpointResolver;
 use function Pest\Laravel\postJson;
 
 it('forged _startUpload on a component without uploads is a 400, not a 500', function () {
+    // Testable exposes the snapshot only through __get(), which PHPStan cannot see.
+    /** @phpstan-ignore property.notFound */
     $snapshot = Livewire::test('reactions', [
         'type' => 'post',
         'id' => 1,
