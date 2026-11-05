@@ -29,7 +29,7 @@ class ImageController extends Controller
     {
         $disk = Storage::disk('local');
 
-        if (! $this->pathIsSafe($path) || ! $disk->exists($path)) {
+        if (! $this->pathIsSafe($path) || ! $disk->fileExists($path)) {
             abort(404);
         }
 
@@ -47,7 +47,7 @@ class ImageController extends Controller
 
         $cacheKey = $this->cacheKey($path, $format, $width, $height, $quality, $fit);
 
-        if ($disk->exists($cacheKey)) {
+        if ($disk->fileExists($cacheKey)) {
             return $this->respond($disk->get($cacheKey), $format);
         }
 

@@ -112,6 +112,14 @@ it('unsigned request is served publicly and cacheably', function () {
     $response->assertHeader('Cache-Control', 'immutable, max-age=31536000, public');
 });
 
+it('directory path returns 404 instead of crashing the decoder', function () {
+    Storage::fake('local');
+    putStaticPng('posts/2026/10/pic.png');
+
+    get('/s/posts/2026/10/')->assertNotFound();
+    get('/s/posts/2026/10')->assertNotFound();
+});
+
 it('static png keeps its format and is resized', function () {
     Storage::fake('local');
     putStaticPng('posts/pic.png');
