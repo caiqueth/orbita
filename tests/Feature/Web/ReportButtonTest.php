@@ -149,3 +149,18 @@ it('the report reaction type is gone', function () {
         expect($slugs)->not->toContain('report');
     }
 });
+
+it('rejects client writes to server-owned reaction state', function (string $property, mixed $value) {
+    $post = reportablePost();
+
+    expect(fn () => Livewire::test('reactions', ['type' => 'post', 'id' => (int) $post->id])
+        ->set($property, $value))
+        ->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+})->with([
+    'nested reactions count' => ['reactions.like', ['x']],
+    'whole reactions map' => ['reactions', ['like' => ['x']]],
+    'count' => ['count', 99],
+    'userReaction' => ['userReaction', 'like'],
+    'reported' => ['reported', true],
+    'announcement' => ['announcement', 'spoof'],
+]);

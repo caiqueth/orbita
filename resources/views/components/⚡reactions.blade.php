@@ -15,23 +15,31 @@ new class extends Component
     public int $id = 0;
 
     /** @var array<string, int> slug => count */
+    #[Locked]
     public array $reactions = [];
 
+    #[Locked]
     public int $score = 0;
 
     /** Transient: filled by a reaction, empty otherwise. See announceScore(). */
+    #[Locked]
     public string $announcement = '';
 
+    #[Locked]
     public int $count = 0;
 
+    #[Locked]
     public ?string $userReaction = null;
 
+    #[Locked]
     public bool $compact = false;
 
+    #[Locked]
     public bool $reported = false;
 
     public string $reason = '';
 
+    #[Locked]
     public bool $showSummary = true;
 
     public function mount(string $type, int $id, bool $compact = false, ?array $summary = null, bool $showSummary = true, ?bool $reported = null): void
