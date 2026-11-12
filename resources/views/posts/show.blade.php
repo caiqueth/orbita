@@ -5,6 +5,7 @@
     $paywallUrl = \App\Support\PaywallBypass::wrap($post->url);
     $translateUrl = \App\Support\AutoTranslate::wrap($post->url, $post->title);
     $canonicalUrl = route('posts.show', ['hashid' => $post->hashid, 'slug' => $post->slug]);
+    $postUrl = $post->url;
 
     $commentPage = max(1, (int) request()->query(\App\Support\Url::COMMENT_PAGE, 1));
     $canonicalWithPage = $commentPage > 1
@@ -155,17 +156,17 @@
                 @endif
 
                 <div class="mt-4 flex flex-wrap items-center gap-2">
-                    <a href="{{ $post->url }}" target="_blank" rel="noopener noreferrer"
-                       class="inline-flex items-center gap-1.5 rounded-md border border-primary-300 px-3 py-3 text-sm font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-950">
+                    <a href="{{ $post->url }}" target="_blank" rel="noopener noreferrer" title="{{ $postUrl }}"
+                       class="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-primary-300 px-3 py-3 text-sm font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-950">
                         @if ($faviconUrl)
                             <img src="{{ $faviconUrl }}" alt="" width="16" height="16" loading="lazy"
-                                 class="h-4 w-4 rounded-sm"
+                                 class="h-4 w-4 shrink-0 rounded-sm"
                                  onerror="this.nextElementSibling.hidden = false; this.remove()">
-                            <x-heroicon-o-link class="h-4 w-4" aria-hidden="true" hidden />
+                            <x-heroicon-o-link class="h-4 w-4 shrink-0" aria-hidden="true" hidden />
                         @else
-                            <x-heroicon-o-link class="h-4 w-4" aria-hidden="true" />
+                            <x-heroicon-o-link class="h-4 w-4 shrink-0" aria-hidden="true" />
                         @endif
-                        {{ $domain }}
+                        <span class="truncate">{{ $postUrl }}</span>
                     </a>
                     @if ($paywallUrl && $paywallUrl !== $post->url)
                         <a href="{{ $paywallUrl }}" target="_blank" rel="noopener noreferrer"
